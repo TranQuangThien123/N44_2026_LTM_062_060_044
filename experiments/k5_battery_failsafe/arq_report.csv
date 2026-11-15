@@ -1,0 +1,3 @@
+timestamp_ms,command_name,mav_cmd,attempt_count,rtt_ms,result,loss_rate_percent,jitter_ms
+31852196,ARM MOTOR,400,1,363.53,ACCEPTED,0.00,27.59
+31853500,TAKEOFF,22,1,288.03,ACCEPTED,0.00,1.63

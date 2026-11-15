@@ -47,6 +47,14 @@ static double get_safe_altitude(void) {
     return alt;
 }
 
+// Hàm kiểm tra trạng thái Battery Failsafe an toàn luồng
+static bool is_battery_failsafe_active(void) {
+    metrics_lock(&g_metrics);
+    bool triggered = g_metrics.battery_failsafe_triggered;
+    metrics_unlock(&g_metrics);
+    return triggered;
+}
+
 // Hàm lấy nhanh tọa độ GPS an toàn luồng
 static void get_safe_position(double *lat, double *lon) {
     metrics_lock(&g_metrics);
@@ -496,7 +504,16 @@ static void execute_takeoff(float target_alt) {
                                             0, 0, 0, 0, 0, 0, target_alt, 4, 800);
     if (tk_ok) {
         printf("[*] Đang cất cánh lên độ cao %.1fm...\n", target_alt);
+        int wait_ticks = 0;
         while (get_safe_altitude() < (target_alt - 0.5f)) {
+            if (is_battery_failsafe_active()) {
+                printf("\n[!] Hủy chờ cất cánh do kích hoạt Battery Failsafe (Pin yếu)!\n");
+                return;
+            }
+            if (++wait_ticks >= 75) { // Tối đa 30 giây (75 * 400ms)
+                printf("\n[-] Quá thời gian chờ cất cánh (30s). Vui lòng kiểm tra trạng thái UAV!\n");
+                return;
+            }
             printf("\r[*] Độ cao hiện tại: %5.2f m / mục tiêu %.1f m...", get_safe_altitude(), target_alt);
             fflush(stdout);
             Sleep(400);
@@ -537,6 +554,10 @@ static void execute_goto(double dist_meters) {
            dist_meters, target_lat, target_lon, current_alt);
 
     for (int i = 0; i < 40; i++) {
+        if (is_battery_failsafe_active()) {
+            printf("\n[!] Hủy bay tới Waypoint do kích hoạt Battery Failsafe (Pin yếu)!\n");
+            return;
+        }
         double now_lat = 0.0, now_lon = 0.0;
         get_safe_position(&now_lat, &now_lon);
 
@@ -767,8 +788,16 @@ int main(void) {
         else if (strcmp(command, "auto") == 0 || strcmp(command, "8") == 0) {
             printf("\n[*] BẮT ĐẦU CHẠY TOÀN BỘ KỊCH BẢN TỰ ĐỘNG...\n");
             execute_takeoff(10.0f);
+            if (is_battery_failsafe_active() || get_safe_altitude() < 2.0) {
+                printf("[-] Dừng kịch bản tự động do UAV chưa đạt độ cao an toàn hoặc đang Failsafe!\n");
+                continue;
+            }
             Sleep(2000);
             execute_goto(50.0);
+            if (is_battery_failsafe_active()) {
+                printf("[-] Dừng kịch bản tự động do Battery Failsafe!\n");
+                continue;
+            }
             Sleep(2000);
             execute_rtl();
         }
